@@ -1,6 +1,7 @@
 const db = require('../models');
 const scheduleService = db.createEmailService;
 let sendGridMAil = require('@sendgrid/mail');
+const CronJob = require('cron').CronJob;
 
 //create functionalities available for scheduling
 exports.createScheduleEmailService = async (req, res) => {
@@ -69,22 +70,43 @@ exports.readScheduleEmailService = async (req, res) => {
 //update functionalities available for scheduling
 exports.updateScheduleEmailService = async (req, res) => {
   try {
-    const _id = req.params.id;
-    const myQuery = { _id: _id };
-    const emailSubject = req.body.subject;
-    const emailText = req.body.text;
+    let _id = req.params.id;
+    let myQuery = { _id: _id };
 
-    const newEmail = {
-      subject: emailSubject,
-      text: emailText,
+    const updateEmail = {
+      subject: 're-scheduled mail service',
+      text: 'Hi, welcome to re-schedule mail service',
     };
     scheduleService
-      .updateOne(myQuery, newEmail)
+      .updateOne(myQuery, updateEmail)
       .then((data) => {
-        res.status(200).send({
-          message: 'service got updated',
-          data: data,
-        });
+        if (data.modifiedCount == 1) {
+          scheduleService.find(myQuery).then((response) => {
+            sendGridMAil.setApiKey(process.env.SENDGRIDAPIKEY);
+            let toEmail = response[0].toEmail;
+            let emailSubject = response[0].subject;
+            let emailText = response[0].text;
+            let fromEmail = process.env.FROMEMAIL;
+            const msg = {
+              to: toEmail,
+              from: fromEmail,
+              subject: emailSubject,
+              text: emailText,
+            };
+            sendGridMAil.send(msg, function (err, info) {
+              if (err) {
+                res.status(400).send('not sent', err);
+              } else {
+                if (info[0].statusCode == 202) {
+                  res.status(200).send({
+                    message: 'service got updated',
+                    data: data,
+                  });
+                }
+              }
+            });
+          });
+        }
       })
       .catch((error) => {
         res.status(404).send({
@@ -99,11 +121,42 @@ exports.updateScheduleEmailService = async (req, res) => {
 //delete functionalities available for scheduling
 exports.deleteScheduleEmailService = async (req, res) => {
   try {
-    const _id = req.params.id;
+    let _id = req.params.id;
     scheduleService
-      .deleteOne({ _id: _id })
-      .then((data) => {
-        res.status(200).send({ message: 'Email service deleted', data: data });
+      .find({ _id: _id })
+      .then((response) => {
+        sendGridMAil.setApiKey(process.env.SENDGRIDAPIKEY);
+        let toEmail = response[0].toEmail;
+        let emailSubject = 'Deleted email service';
+        let emailText = 'Hi, sorry for  deleting email service';
+        let fromEmail = process.env.FROMEMAIL;
+        const msg = {
+          to: toEmail,
+          from: fromEmail,
+          subject: emailSubject,
+          text: emailText,
+        };
+        sendGridMAil.send(msg, function (err, info) {
+          if (err) {
+            res.status(400).send('not sent', err);
+          } else {
+            if (info[0].statusCode == 202) {
+              scheduleService
+                .deleteOne({ _id: _id })
+                .then((data) => {
+                  res
+                    .status(200)
+                    .send({ message: 'Email service deleted', data: data });
+                })
+                .catch((err) => {
+                  res.status(404).send({
+                    message: 'Some error occurred while deleting.',
+                    data: err,
+                  });
+                });
+            }
+          }
+        });
       })
       .catch((err) => {
         res.status(404).send({
@@ -115,3 +168,13 @@ exports.deleteScheduleEmailService = async (req, res) => {
     res.status(500).send({ message: 'Bad request', data: error });
   }
 };
+
+// const job = new CronJob(
+//   '*/1 * * * * *',
+//   function () {
+//     console.log('You will see this message every second');
+//     createScheduleEmailService();
+//     // let messages =  this.createScheduleEmailService();
+//     // console.log(messages);
+//   },
+// );
